@@ -1,100 +1,162 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import { BrowserQRCodeReader } from '@zxing/browser';
-import { BarcodeFormat, DecodeHintType } from '@zxing/library';
+import { useRef, useState, useCallback } from 'react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { Upload, Image as ImageIcon, X, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 interface QRFileUploadProps {
   onScan: (data: string) => void;
+  className?: string;
 }
 
-export default function QRFileUpload({ onScan }: QRFileUploadProps) {
+type UploadState = 'idle' | 'dragging' | 'processing' | 'success' | 'error';
+
+export default function QRFileUpload({ onScan, className }: QRFileUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState<string>('');
-  const [preview, setPreview] = useState<string>('');
+  const [state, setState] = useState<UploadState>('idle');
+  const [preview, setPreview] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const elementId = useRef(`qr-file-reader-${Math.random().toString(36).slice(2, 9)}`);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Parse QR data
+  const parseQRData = useCallback((decodedText: string): string => {
+    try {
+      let qrData = JSON.parse(decodedText);
+      if (typeof qrData === 'string') {
+        qrData = JSON.parse(qrData);
+      }
+      return qrData.ticket_number || qrData.ticketNumber || decodedText;
+    } catch {
+      return decodedText;
+    }
+  }, []);
 
-    // Проверка типа файла
+  // Process file
+  const processFile = useCallback(async (file: File) => {
+    // Validate file type
     if (!file.type.startsWith('image/')) {
       setError('Пожалуйста, загрузите изображение');
+      setState('error');
       return;
     }
 
-    setIsProcessing(true);
-    setError('');
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Файл слишком большой (макс. 10 МБ)');
+      setState('error');
+      return;
+    }
 
+    setState('processing');
+    setError(null);
+    setResult(null);
+
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setPreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    // Scan QR code
     try {
-      // Создаем preview
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setPreview(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      const scanner = new Html5Qrcode(elementId.current);
+      const decodedText = await scanner.scanFile(file, true);
+      const parsedResult = parseQRData(decodedText);
 
-      // Сканируем QR код с оптимизацией
-      const hints = new Map();
-      hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
-      hints.set(DecodeHintType.TRY_HARDER, false);
+      setResult(parsedResult);
+      setState('success');
 
-      const codeReader = new BrowserQRCodeReader(hints);
-      const imageUrl = URL.createObjectURL(file);
-
-      try {
-        const result = await codeReader.decodeFromImageUrl(imageUrl);
-
-        try {
-          let rawText = result.getText();
-
-          // Попытка распарсить как JSON (может быть дважды закодирован)
-          let qrData: any;
-          try {
-            qrData = JSON.parse(rawText);
-            // Если результат - строка, парсим еще раз
-            if (typeof qrData === 'string') {
-              qrData = JSON.parse(qrData);
-            }
-          } catch {
-            // Если парсинг не удался, используем как текст
-            onScan(rawText);
-            return;
-          }
-
-          // Поддержка как snake_case, так и camelCase
-          const ticketNumber = qrData.ticket_number || qrData.ticketNumber;
-          if (ticketNumber) {
-            onScan(ticketNumber);
-          } else {
-            onScan(rawText);
-          }
-        } catch (error) {
-          // Если это не JSON, используем как текст
-          onScan(result.getText());
-        }
-      } finally {
-        URL.revokeObjectURL(imageUrl);
+      // Vibrate on success
+      if (navigator.vibrate) {
+        navigator.vibrate(100);
       }
-    } catch (err: any) {
-      console.error('Ошибка сканирования файла:', err);
-      setError('QR код не найден. Попробуйте другое изображение.');
-    } finally {
-      setIsProcessing(false);
-      // Очищаем input для возможности загрузить тот же файл снова
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+
+      onScan(parsedResult);
+    } catch (err) {
+      console.error('Error scanning file:', err);
+      setError('QR код не найден на изображении');
+      setState('error');
+    }
+  }, [parseQRData, onScan]);
+
+  // Handle file input change
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+    // Reset input for re-upload of same file
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [processFile]);
+
+  // Handle drag events
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setState('dragging');
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setState('idle');
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processFile(file);
+    } else {
+      setState('idle');
+    }
+  }, [processFile]);
+
+  // Handle click
+  const handleClick = useCallback(() => {
+    if (state !== 'processing') {
+      fileInputRef.current?.click();
+    }
+  }, [state]);
+
+  // Reset state
+  const handleReset = useCallback(() => {
+    setState('idle');
+    setPreview(null);
+    setResult(null);
+    setError(null);
+  }, []);
+
+  // Handle paste
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            processFile(file);
+            break;
+          }
+        }
       }
     }
-  };
-
-  const handleClick = () => {
-    fileInputRef.current?.click();
-  };
+  }, [processFile]);
 
   return (
-    <div className="w-full max-w-lg mx-auto space-y-4">
+    <div className={cn('w-full', className)}>
+      {/* Hidden elements */}
+      <div id={elementId.current} className="hidden" />
       <input
         ref={fileInputRef}
         type="file"
@@ -103,60 +165,126 @@ export default function QRFileUpload({ onScan }: QRFileUploadProps) {
         className="hidden"
       />
 
-      <div
+      {/* Drop zone */}
+      <Card
         onClick={handleClick}
-        className={`
-          relative overflow-hidden
-          border-2 border-dashed border-slate-700 rounded-xl
-          bg-slate-800/30 hover:bg-slate-800/50
-          p-8 cursor-pointer transition-all duration-300
-          ${isProcessing ? 'cursor-wait opacity-75' : 'hover:border-blue-500'}
-        `}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onPaste={handlePaste}
+        tabIndex={0}
+        className={cn(
+          'relative overflow-hidden cursor-pointer transition-all duration-300 border-2 border-dashed',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          state === 'idle' && 'border-muted-foreground/25 hover:border-primary/50 hover:bg-accent/50',
+          state === 'dragging' && 'border-primary bg-primary/10 scale-[1.02]',
+          state === 'processing' && 'border-primary/50 bg-primary/5',
+          state === 'success' && 'border-green-500/50 bg-green-500/5',
+          state === 'error' && 'border-destructive/50 bg-destructive/5',
+        )}
       >
-        <div className="flex flex-col items-center justify-center gap-4">
-          {isProcessing ? (
-            <>
-              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-lg font-medium text-slate-300">Обработка изображения...</p>
-            </>
-          ) : (
-            <>
-              <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center">
-                <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
+        {/* Preview image */}
+        {preview && (
+          <div className="relative aspect-video w-full overflow-hidden">
+            <img
+              src={preview}
+              alt="Preview"
+              className={cn(
+                'w-full h-full object-contain transition-all duration-300',
+                state === 'processing' && 'opacity-50 blur-sm',
+              )}
+            />
+
+            {/* Processing overlay */}
+            {state === 'processing' && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                  <p className="text-sm font-medium text-muted-foreground">Обработка изображения...</p>
+                </div>
               </div>
-              <div className="text-center">
-                <p className="text-lg font-semibold text-slate-200 mb-1">
-                  Загрузить QR код из файла
-                </p>
-                <p className="text-sm text-slate-400">
-                  Нажмите или перетащите изображение сюда
-                </p>
+            )}
+
+            {/* Success overlay */}
+            {state === 'success' && (
+              <div className="absolute inset-0 flex items-center justify-center bg-green-500/20 backdrop-blur-sm">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center animate-in zoom-in duration-300">
+                    <Check className="w-8 h-8 text-white" />
+                  </div>
+                  <Badge variant="secondary" className="bg-background/80">
+                    {result}
+                  </Badge>
+                </div>
               </div>
-            </>
-          )}
-        </div>
-      </div>
+            )}
 
-      {preview && (
-        <div className="rounded-lg overflow-hidden border-2 border-blue-500/30 bg-slate-800/30 p-2">
-          <img
-            src={preview}
-            alt="Preview"
-            className="w-full h-auto max-h-64 object-contain rounded"
-          />
-        </div>
-      )}
+            {/* Error overlay */}
+            {state === 'error' && (
+              <div className="absolute inset-0 flex items-center justify-center bg-destructive/20 backdrop-blur-sm">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-16 h-16 rounded-full bg-destructive flex items-center justify-center animate-in zoom-in duration-300">
+                    <AlertCircle className="w-8 h-8 text-white" />
+                  </div>
+                  <p className="text-sm font-medium text-destructive">{error}</p>
+                </div>
+              </div>
+            )}
 
-      {error && (
-        <div className="bg-red-950/50 border border-red-500/50 rounded-lg p-4">
-          <p className="text-red-400 text-sm text-center">{error}</p>
-        </div>
-      )}
+            {/* Reset button */}
+            {(state === 'success' || state === 'error') && (
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleReset();
+                }}
+                className="absolute top-3 right-3 rounded-full w-8 h-8"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        )}
 
-      <p className="text-xs text-slate-500 text-center">
-        Поддерживаются форматы: JPG, PNG, GIF, WEBP
+        {/* Empty state */}
+        {!preview && (
+          <div className="p-8 sm:p-12 flex flex-col items-center justify-center gap-4">
+            <div className={cn(
+              'w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300',
+              state === 'idle' && 'bg-muted',
+              state === 'dragging' && 'bg-primary/20 scale-110',
+            )}>
+              {state === 'dragging' ? (
+                <ImageIcon className="w-10 h-10 text-primary animate-pulse" />
+              ) : (
+                <Upload className="w-10 h-10 text-muted-foreground" />
+              )}
+            </div>
+
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-semibold">
+                {state === 'dragging' ? 'Отпустите файл' : 'Загрузить изображение'}
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                Перетащите изображение сюда, вставьте из буфера обмена или нажмите для выбора
+              </p>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2 mt-2">
+              <Badge variant="outline" className="text-xs">JPG</Badge>
+              <Badge variant="outline" className="text-xs">PNG</Badge>
+              <Badge variant="outline" className="text-xs">GIF</Badge>
+              <Badge variant="outline" className="text-xs">WEBP</Badge>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Keyboard hint */}
+      <p className="text-xs text-muted-foreground text-center mt-3">
+        Совет: используйте <kbd className="px-1.5 py-0.5 rounded bg-muted font-mono text-[10px]">Ctrl+V</kbd> для вставки из буфера обмена
       </p>
     </div>
   );
