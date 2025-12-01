@@ -38,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { AnimatedCounter } from '@/components/AnimatedCounter';
 
 interface ScannerUser {
   id: string;
@@ -188,9 +189,68 @@ export default function AdminPage() {
           schema: 'public',
           table: 'scan_logs',
         },
-        () => {
-          // При новом сканировании обновляем статистику
-          fetchStats();
+        async (payload) => {
+          const newScan = payload.new as {
+            id: string;
+            scanner_user_id: string;
+            ticket_number: string;
+            scan_result: 'success' | 'error' | 'already_used' | 'not_found';
+            scanned_at: string;
+          };
+
+          // Получаем информацию о сканере
+          const { data: scannerData } = await scannerSupabase
+            .from('scanner_users')
+            .select('id, username, name')
+            .eq('id', newScan.scanner_user_id)
+            .single();
+
+          // Обновляем статистику инкрементально
+          setStats((prev) => {
+            if (!prev) return prev;
+
+            // Обновляем общую статистику
+            const newTotalStats = { ...prev.totalStats };
+            newTotalStats.total += 1;
+            if (newScan.scan_result === 'success') newTotalStats.success += 1;
+            else if (newScan.scan_result === 'already_used') newTotalStats.already_used += 1;
+            else if (newScan.scan_result === 'not_found') newTotalStats.not_found += 1;
+            else newTotalStats.error += 1;
+
+            // Обновляем статистику сканера
+            const newScannerStats = prev.scannerStats.map((scanner) => {
+              if (scanner.user.id === newScan.scanner_user_id) {
+                const newStats = { ...scanner.stats };
+                newStats.total += 1;
+                if (newScan.scan_result === 'success') newStats.success += 1;
+                else if (newScan.scan_result === 'already_used') newStats.already_used += 1;
+                else if (newScan.scan_result === 'not_found') newStats.not_found += 1;
+                else newStats.error += 1;
+
+                return {
+                  ...scanner,
+                  stats: newStats,
+                  lastScan: newScan.scanned_at,
+                };
+              }
+              return scanner;
+            });
+
+            // Добавляем новое сканирование в начало списка
+            const newRecentScan: RecentScan = {
+              id: newScan.id,
+              ticket_number: newScan.ticket_number,
+              scan_result: newScan.scan_result,
+              scanned_at: newScan.scanned_at,
+              scanner: scannerData || null,
+            };
+
+            return {
+              totalStats: newTotalStats,
+              scannerStats: newScannerStats,
+              recentScans: [newRecentScan, ...prev.recentScans.slice(0, 49)],
+            };
+          });
         }
       )
       .subscribe((status) => {
@@ -204,7 +264,7 @@ export default function AdminPage() {
         scannerSupabase.removeChannel(channelRef.current);
       }
     };
-  }, [user, fetchStats]);
+  }, [user]);
 
   const openAddForm = () => {
     setEditingUser(null);
@@ -427,7 +487,9 @@ export default function AdminPage() {
                           <BarChart3 className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                          <p className="text-2xl font-bold">{stats.totalStats.total}</p>
+                          <p className="text-2xl font-bold">
+                            <AnimatedCounter value={stats.totalStats.total} />
+                          </p>
                           <p className="text-xs text-muted-foreground">Всего</p>
                         </div>
                       </div>
@@ -440,7 +502,9 @@ export default function AdminPage() {
                           <CheckCircle2 className="w-5 h-5 text-green-500" />
                         </div>
                         <div>
-                          <p className="text-2xl font-bold">{stats.totalStats.success}</p>
+                          <p className="text-2xl font-bold">
+                            <AnimatedCounter value={stats.totalStats.success} />
+                          </p>
                           <p className="text-xs text-muted-foreground">Успешных</p>
                         </div>
                       </div>
@@ -453,7 +517,9 @@ export default function AdminPage() {
                           <AlertTriangle className="w-5 h-5 text-orange-500" />
                         </div>
                         <div>
-                          <p className="text-2xl font-bold">{stats.totalStats.already_used}</p>
+                          <p className="text-2xl font-bold">
+                            <AnimatedCounter value={stats.totalStats.already_used} />
+                          </p>
                           <p className="text-xs text-muted-foreground">Повторных</p>
                         </div>
                       </div>
@@ -466,7 +532,9 @@ export default function AdminPage() {
                           <XCircle className="w-5 h-5 text-destructive" />
                         </div>
                         <div>
-                          <p className="text-2xl font-bold">{stats.totalStats.not_found + stats.totalStats.error}</p>
+                          <p className="text-2xl font-bold">
+                            <AnimatedCounter value={stats.totalStats.not_found + stats.totalStats.error} />
+                          </p>
                           <p className="text-xs text-muted-foreground">Ошибок</p>
                         </div>
                       </div>
@@ -500,19 +568,19 @@ export default function AdminPage() {
                             </div>
                             <div className="flex items-center gap-4 text-sm">
                               <div className="text-center">
-                                <p className="font-bold">{scanner.stats.total}</p>
+                                <p className="font-bold"><AnimatedCounter value={scanner.stats.total} /></p>
                                 <p className="text-xs text-muted-foreground">Всего</p>
                               </div>
                               <div className="text-center">
-                                <p className="font-bold text-green-500">{scanner.stats.success}</p>
+                                <p className="font-bold text-green-500"><AnimatedCounter value={scanner.stats.success} /></p>
                                 <p className="text-xs text-muted-foreground">Успешно</p>
                               </div>
                               <div className="text-center">
-                                <p className="font-bold text-orange-500">{scanner.stats.already_used}</p>
+                                <p className="font-bold text-orange-500"><AnimatedCounter value={scanner.stats.already_used} /></p>
                                 <p className="text-xs text-muted-foreground">Повторно</p>
                               </div>
                               <div className="text-center hidden sm:block">
-                                <p className="font-bold text-destructive">{scanner.stats.not_found + scanner.stats.error}</p>
+                                <p className="font-bold text-destructive"><AnimatedCounter value={scanner.stats.not_found + scanner.stats.error} /></p>
                                 <p className="text-xs text-muted-foreground">Ошибки</p>
                               </div>
                             </div>

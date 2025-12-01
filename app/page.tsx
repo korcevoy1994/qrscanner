@@ -123,7 +123,7 @@ export default function Home() {
                 <span className="text-sm font-medium hidden sm:block">{user.name}</span>
               </div>
             )}
-            {scanHistory.length > 0 && (
+            {user?.role === 'admin' && scanHistory.length > 0 && (
               <Badge variant="secondary" className="gap-1.5">
                 <History className="w-3 h-3" />
                 {scanHistory.length}
@@ -143,113 +143,124 @@ export default function Home() {
 
       {/* Main content */}
       <div className="container px-4 py-6 max-w-2xl mx-auto">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="camera" className="gap-2">
-              <Camera className="w-4 h-4" />
-              <span className="hidden sm:inline">Камера</span>
-            </TabsTrigger>
-            <TabsTrigger value="upload" className="gap-2">
-              <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">Файл</span>
-            </TabsTrigger>
-            <TabsTrigger value="history" className="gap-2">
-              <History className="w-4 h-4" />
-              <span className="hidden sm:inline">История</span>
-              {scanHistory.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 justify-center text-xs sm:hidden">
-                  {scanHistory.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
+        {user?.role === 'admin' ? (
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3 mb-6">
+              <TabsTrigger value="camera" className="gap-2">
+                <Camera className="w-4 h-4" />
+                <span className="hidden sm:inline">Камера</span>
+              </TabsTrigger>
+              <TabsTrigger value="upload" className="gap-2">
+                <Upload className="w-4 h-4" />
+                <span className="hidden sm:inline">Файл</span>
+              </TabsTrigger>
+              <TabsTrigger value="history" className="gap-2">
+                <History className="w-4 h-4" />
+                <span className="hidden sm:inline">История</span>
+                {scanHistory.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 justify-center text-xs sm:hidden">
+                    {scanHistory.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Camera Tab */}
-          <TabsContent value="camera" className="mt-0 space-y-4">
-            <QRScanner onScan={handleScan} isActive={activeTab === 'camera'} />
+            {/* Camera Tab */}
+            <TabsContent value="camera" className="mt-0 space-y-4">
+              <QRScanner onScan={handleScan} isActive={activeTab === 'camera'} />
+
+              <p className="text-sm text-muted-foreground text-center">
+                Наведите камеру на QR код билета для проверки
+              </p>
+            </TabsContent>
+
+            {/* Upload Tab */}
+            <TabsContent value="upload" className="mt-0 space-y-4">
+              <QRFileUpload onScan={handleScan} />
+            </TabsContent>
+
+            {/* History Tab */}
+            <TabsContent value="history" className="mt-0">
+              {scanHistory.length === 0 ? (
+                <Card className="border-dashed">
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <History className="w-12 h-12 text-muted-foreground/50 mb-4" />
+                    <p className="text-muted-foreground text-center">
+                      История сканирований пуста
+                    </p>
+                    <p className="text-sm text-muted-foreground/70 text-center mt-1">
+                      Отсканируйте QR код, чтобы начать
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Последние {scanHistory.length} сканирований
+                    </p>
+                    <Button variant="ghost" size="sm" onClick={clearHistory}>
+                      Очистить
+                    </Button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {scanHistory.map((item) => (
+                      <Card key={item.id} className={cn(
+                        'transition-all',
+                        item.result.success ? 'border-green-500/30' : 'border-destructive/30'
+                      )}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-3">
+                            <div className={cn(
+                              'w-10 h-10 rounded-full flex items-center justify-center shrink-0',
+                              item.result.success ? 'bg-green-500/10' : 'bg-destructive/10'
+                            )}>
+                              {item.result.success ? (
+                                <CheckCircle2 className="w-5 h-5 text-green-500" />
+                              ) : (
+                                <XCircle className="w-5 h-5 text-destructive" />
+                              )}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-mono text-sm font-medium truncate">
+                                  {item.ticketNumber}
+                                </span>
+                                <Badge variant={item.result.success ? 'default' : 'destructive'} className="shrink-0">
+                                  {item.result.success ? 'Валидный' : 'Ошибка'}
+                                </Badge>
+                              </div>
+
+                              <p className="text-sm text-muted-foreground truncate">
+                                {item.result.message}
+                              </p>
+
+                              <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+                                <Clock className="w-3 h-3" />
+                                {item.timestamp.toLocaleTimeString('ru-RU')}
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        ) : (
+          /* Scanner-only view - just camera */
+          <div className="space-y-4">
+            <QRScanner onScan={handleScan} isActive={true} />
 
             <p className="text-sm text-muted-foreground text-center">
               Наведите камеру на QR код билета для проверки
             </p>
-          </TabsContent>
-
-          {/* Upload Tab */}
-          <TabsContent value="upload" className="mt-0 space-y-4">
-            <QRFileUpload onScan={handleScan} />
-          </TabsContent>
-
-          {/* History Tab */}
-          <TabsContent value="history" className="mt-0">
-            {scanHistory.length === 0 ? (
-              <Card className="border-dashed">
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <History className="w-12 h-12 text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground text-center">
-                    История сканирований пуста
-                  </p>
-                  <p className="text-sm text-muted-foreground/70 text-center mt-1">
-                    Отсканируйте QR код, чтобы начать
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    Последние {scanHistory.length} сканирований
-                  </p>
-                  <Button variant="ghost" size="sm" onClick={clearHistory}>
-                    Очистить
-                  </Button>
-                </div>
-
-                <div className="space-y-3">
-                  {scanHistory.map((item) => (
-                    <Card key={item.id} className={cn(
-                      'transition-all',
-                      item.result.success ? 'border-green-500/30' : 'border-destructive/30'
-                    )}>
-                      <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                          <div className={cn(
-                            'w-10 h-10 rounded-full flex items-center justify-center shrink-0',
-                            item.result.success ? 'bg-green-500/10' : 'bg-destructive/10'
-                          )}>
-                            {item.result.success ? (
-                              <CheckCircle2 className="w-5 h-5 text-green-500" />
-                            ) : (
-                              <XCircle className="w-5 h-5 text-destructive" />
-                            )}
-                          </div>
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-mono text-sm font-medium truncate">
-                                {item.ticketNumber}
-                              </span>
-                              <Badge variant={item.result.success ? 'default' : 'destructive'} className="shrink-0">
-                                {item.result.success ? 'Валидный' : 'Ошибка'}
-                              </Badge>
-                            </div>
-
-                            <p className="text-sm text-muted-foreground truncate">
-                              {item.result.message}
-                            </p>
-
-                            <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-                              <Clock className="w-3 h-3" />
-                              {item.timestamp.toLocaleTimeString('ru-RU')}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
       </div>
 
       {/* Validation overlay */}
