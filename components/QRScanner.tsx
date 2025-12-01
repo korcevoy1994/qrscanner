@@ -20,7 +20,10 @@ interface CameraDevice {
 
 export default function QRScanner({ onScan, isActive = true, className }: QRScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const isTransitioningRef = useRef(false);
   const hasScannedRef = useRef(false);
+  const mountedRef = useRef(false);
+
   const [isScanning, setIsScanning] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
@@ -29,12 +32,17 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
   const [torchOn, setTorchOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
+
   const elementId = useRef(`qr-scanner-${Math.random().toString(36).slice(2, 9)}`);
 
   // Mount detection
   useEffect(() => {
+    mountedRef.current = true;
     setIsMounted(true);
-    return () => setIsMounted(false);
+
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   // Get available cameras
@@ -44,7 +52,6 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
     Html5Qrcode.getCameras()
       .then((devices) => {
         if (devices && devices.length) {
-          // Prefer back camera
           const sortedCameras = [...devices].sort((a, b) => {
             const aIsBack = a.label.toLowerCase().includes('back') || a.label.toLowerCase().includes('rear');
             const bIsBack = b.label.toLowerCase().includes('back') || b.label.toLowerCase().includes('rear');
@@ -74,24 +81,52 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
     }
   }, []);
 
+  // Stop scanning safely
+  const stopScanning = useCallback(async () => {
+    if (!scannerRef.current || isTransitioningRef.current) return;
+
+    isTransitioningRef.current = true;
+
+    try {
+      const state = scannerRef.current.getState();
+      if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+        await scannerRef.current.stop();
+      }
+    } catch (err) {
+      // Ignore errors during stop
+    }
+
+    setIsScanning(false);
+    setTorchOn(false);
+    setHasTorch(false);
+    isTransitioningRef.current = false;
+  }, []);
+
   // Start scanning
   const startScanning = useCallback(async () => {
-    if (!isMounted || cameras.length === 0 || isScanning) return;
+    if (!mountedRef.current || cameras.length === 0) return;
+    if (isTransitioningRef.current) return;
 
+    // Stop any existing scanning first
+    if (scannerRef.current) {
+      await stopScanning();
+      // Small delay to ensure cleanup
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    if (!mountedRef.current) return;
+
+    isTransitioningRef.current = true;
     setError(null);
     hasScannedRef.current = false;
 
     try {
-      if (!scannerRef.current) {
-        scannerRef.current = new Html5Qrcode(elementId.current, {
-          verbose: false,
-        });
-      }
+      // Create new scanner instance
+      scannerRef.current = new Html5Qrcode(elementId.current, { verbose: false });
 
-      const scanner = scannerRef.current;
       const camera = cameras[currentCameraIndex];
 
-      await scanner.start(
+      await scannerRef.current.start(
         camera.id,
         {
           fps: 15,
@@ -100,72 +135,55 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
           disableFlip: false,
         },
         (decodedText) => {
-          if (!hasScannedRef.current) {
+          if (!hasScannedRef.current && mountedRef.current) {
             hasScannedRef.current = true;
             const result = parseQRData(decodedText);
             setLastScanned(result);
 
-            // Vibrate on success
             if (navigator.vibrate) {
               navigator.vibrate(100);
             }
 
             onScan(result);
 
-            // Pause briefly to prevent double scans
-            scanner.pause(false);
+            // Reset after delay
             setTimeout(() => {
               hasScannedRef.current = false;
-              if (scanner.getState() === Html5QrcodeScannerState.PAUSED) {
-                scanner.resume();
-              }
             }, 1500);
           }
         },
-        () => {} // Ignore scan errors
+        () => {}
       );
 
-      setIsScanning(true);
+      if (mountedRef.current) {
+        setIsScanning(true);
 
-      // Check for torch support
-      try {
-        const capabilities = scanner.getRunningTrackCapabilities() as MediaTrackCapabilities & { torch?: boolean };
-        setHasTorch(!!capabilities?.torch);
-      } catch {
-        setHasTorch(false);
+        // Check for torch support
+        try {
+          const capabilities = scannerRef.current.getRunningTrackCapabilities() as MediaTrackCapabilities & { torch?: boolean };
+          setHasTorch(!!capabilities?.torch);
+        } catch {
+          setHasTorch(false);
+        }
       }
     } catch (err: any) {
       console.error('Error starting scanner:', err);
-      setError(err.message || 'Ошибка запуска камеры');
-      setIsScanning(false);
-    }
-  }, [isMounted, cameras, currentCameraIndex, isScanning, parseQRData, onScan]);
-
-  // Stop scanning
-  const stopScanning = useCallback(async () => {
-    if (!scannerRef.current) return;
-
-    try {
-      const state = scannerRef.current.getState();
-      if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
-        await scannerRef.current.stop();
+      if (mountedRef.current) {
+        setError(err.message || 'Ошибка запуска камеры');
+        setIsScanning(false);
       }
-    } catch (err) {
-      console.error('Error stopping scanner:', err);
     }
 
-    setIsScanning(false);
-    setTorchOn(false);
-    setHasTorch(false);
-  }, []);
+    isTransitioningRef.current = false;
+  }, [cameras, currentCameraIndex, parseQRData, onScan, stopScanning]);
 
   // Toggle torch
   const toggleTorch = useCallback(async () => {
-    if (!scannerRef.current || !hasTorch) return;
+    if (!scannerRef.current || !hasTorch || isTransitioningRef.current) return;
 
     try {
       await scannerRef.current.applyVideoConstraints({
-        // @ts-ignore - torch is a valid constraint
+        // @ts-ignore
         advanced: [{ torch: !torchOn }],
       });
       setTorchOn(!torchOn);
@@ -176,34 +194,44 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
 
   // Switch camera
   const switchCamera = useCallback(async () => {
-    if (cameras.length < 2) return;
-
-    await stopScanning();
+    if (cameras.length < 2 || isTransitioningRef.current) return;
     setCurrentCameraIndex((prev) => (prev + 1) % cameras.length);
-  }, [cameras.length, stopScanning]);
+  }, [cameras.length]);
 
-  // Auto-start on camera change
+  // Start when cameras are available and component is active
   useEffect(() => {
-    if (isActive && cameras.length > 0 && !isScanning) {
-      startScanning();
-    }
-  }, [isActive, cameras, currentCameraIndex]);
+    if (!isMounted || cameras.length === 0 || !isActive) return;
 
-  // Cleanup on unmount or when inactive
+    startScanning();
+
+    return () => {
+      // Cleanup on unmount or when becoming inactive
+      if (scannerRef.current) {
+        const scanner = scannerRef.current;
+        scannerRef.current = null;
+
+        (async () => {
+          try {
+            const state = scanner.getState();
+            if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+              await scanner.stop();
+            }
+          } catch {
+            // Ignore cleanup errors
+          }
+        })();
+      }
+    };
+  }, [isMounted, cameras, currentCameraIndex, isActive]);
+
+  // Handle active state changes
   useEffect(() => {
+    if (!isMounted) return;
+
     if (!isActive && isScanning) {
       stopScanning();
     }
-
-    return () => {
-      if (scannerRef.current) {
-        stopScanning().then(() => {
-          scannerRef.current?.clear();
-          scannerRef.current = null;
-        });
-      }
-    };
-  }, [isActive, isScanning, stopScanning]);
+  }, [isActive, isScanning, isMounted, stopScanning]);
 
   if (!isMounted) {
     return (
@@ -223,20 +251,16 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
       {/* Scanning overlay frame */}
       {isScanning && (
         <div className="absolute inset-0 pointer-events-none">
-          {/* Dark overlay with cutout */}
           <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/40" />
 
-          {/* Scanning frame */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72">
-            {/* Corner brackets with glow */}
-            <div className="absolute top-0 left-0 w-16 h-16 border-t-4 border-l-4 border-primary rounded-tl-2xl shadow-[0_0_20px_rgba(var(--primary-rgb),0.5)]" />
-            <div className="absolute top-0 right-0 w-16 h-16 border-t-4 border-r-4 border-primary rounded-tr-2xl shadow-[0_0_20px_rgba(var(--primary-rgb),0.5)]" />
-            <div className="absolute bottom-0 left-0 w-16 h-16 border-b-4 border-l-4 border-primary rounded-bl-2xl shadow-[0_0_20px_rgba(var(--primary-rgb),0.5)]" />
-            <div className="absolute bottom-0 right-0 w-16 h-16 border-b-4 border-r-4 border-primary rounded-br-2xl shadow-[0_0_20px_rgba(var(--primary-rgb),0.5)]" />
+            <div className="absolute top-0 left-0 w-16 h-16 border-t-4 border-l-4 border-primary rounded-tl-2xl" />
+            <div className="absolute top-0 right-0 w-16 h-16 border-t-4 border-r-4 border-primary rounded-tr-2xl" />
+            <div className="absolute bottom-0 left-0 w-16 h-16 border-b-4 border-l-4 border-primary rounded-bl-2xl" />
+            <div className="absolute bottom-0 right-0 w-16 h-16 border-b-4 border-r-4 border-primary rounded-br-2xl" />
 
-            {/* Scanning line */}
             <div className="absolute inset-x-4 top-4 bottom-4 overflow-hidden">
-              <div className="w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent animate-scan shadow-[0_0_15px_rgba(var(--primary-rgb),0.8)]" />
+              <div className="w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent animate-scan" />
             </div>
           </div>
         </div>
