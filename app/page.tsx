@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Camera, Upload, History, CheckCircle2, XCircle, Clock, Ticket, User, MapPin, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Camera, Upload, History, CheckCircle2, XCircle, Clock, Ticket, User, MapPin, Loader2, LogOut, Settings } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import QRScanner from '@/components/QRScanner';
 import QRFileUpload from '@/components/QRFileUpload';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -19,6 +21,8 @@ interface ScanHistoryItem {
 }
 
 export default function Home() {
+  const router = useRouter();
+  const { user, logout, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('camera');
   const [isValidating, setIsValidating] = useState(false);
   const [validationResult, setValidationResult] = useState<TicketValidationResponse | null>(null);
@@ -82,6 +86,14 @@ export default function Home() {
     setScanHistory([]);
   }, []);
 
+  if (isLoading) {
+    return (
+      <main className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-background">
       {/* Header */}
@@ -102,12 +114,30 @@ export default function Home() {
             </div>
           </div>
 
-          {scanHistory.length > 0 && (
-            <Badge variant="secondary" className="gap-1.5">
-              <History className="w-3 h-3" />
-              {scanHistory.length}
-            </Badge>
-          )}
+          <div className="flex items-center gap-3">
+            {user && (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center">
+                  <User className="w-4 h-4 text-secondary-foreground" />
+                </div>
+                <span className="text-sm font-medium hidden sm:block">{user.name}</span>
+              </div>
+            )}
+            {scanHistory.length > 0 && (
+              <Badge variant="secondary" className="gap-1.5">
+                <History className="w-3 h-3" />
+                {scanHistory.length}
+              </Badge>
+            )}
+            {user?.role === 'admin' && (
+              <Button variant="ghost" size="icon" onClick={() => router.push('/admin')} title="Админ-панель">
+                <Settings className="w-4 h-4" />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" onClick={logout} title="Выйти">
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </header>
 
