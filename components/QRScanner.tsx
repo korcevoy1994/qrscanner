@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode, Html5QrcodeScannerState } from 'html5-qrcode';
-import { Camera, CameraOff, Flashlight, FlashlightOff, SwitchCamera, RefreshCw } from 'lucide-react';
+import { Camera, CameraOff, Flashlight, FlashlightOff, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 interface QRScannerProps {
@@ -192,11 +193,14 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
     }
   }, [hasTorch, torchOn]);
 
-  // Switch camera
-  const switchCamera = useCallback(async () => {
-    if (cameras.length < 2 || isTransitioningRef.current) return;
-    setCurrentCameraIndex((prev) => (prev + 1) % cameras.length);
-  }, [cameras.length]);
+  // Select camera by id
+  const selectCamera = useCallback((cameraId: string) => {
+    if (isTransitioningRef.current) return;
+    const index = cameras.findIndex(c => c.id === cameraId);
+    if (index !== -1 && index !== currentCameraIndex) {
+      setCurrentCameraIndex(index);
+    }
+  }, [cameras, currentCameraIndex]);
 
   // Start when cameras are available and component is active
   useEffect(() => {
@@ -305,14 +309,19 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
           )}
 
           {cameras.length > 1 && (
-            <Button
-              variant="secondary"
-              size="icon"
-              onClick={switchCamera}
-              className="rounded-full w-12 h-12 backdrop-blur-sm"
-            >
-              <SwitchCamera className="w-5 h-5" />
-            </Button>
+            <Select value={cameras[currentCameraIndex]?.id} onValueChange={selectCamera}>
+              <SelectTrigger className="w-[180px] bg-background/80 backdrop-blur-sm border-0">
+                <Camera className="w-4 h-4 mr-2 shrink-0" />
+                <SelectValue placeholder="Выберите камеру" />
+              </SelectTrigger>
+              <SelectContent>
+                {cameras.map((camera, index) => (
+                  <SelectItem key={camera.id} value={camera.id}>
+                    {camera.label || `Камера ${index + 1}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </div>
       )}
