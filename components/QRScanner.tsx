@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Html5Qrcode, Html5QrcodeScannerState } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Camera, CameraOff, Flashlight, FlashlightOff, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +22,8 @@ interface CameraDevice {
 export default function QRScanner({ onScan, isActive = true, className }: QRScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isTransitioningRef = useRef(false);
-  const hasScannedRef = useRef(false);
+  const lastScannedCodeRef = useRef<string | null>(null);
+  const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const mountedRef = useRef(false);
 
   const [isScanning, setIsScanning] = useState(false);
@@ -43,6 +44,9 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
 
     return () => {
       mountedRef.current = false;
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current);
+      }
     };
   }, []);
 
@@ -119,39 +123,57 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
 
     isTransitioningRef.current = true;
     setError(null);
-    hasScannedRef.current = false;
+    lastScannedCodeRef.current = null;
 
     try {
-      // Create new scanner instance
-      scannerRef.current = new Html5Qrcode(elementId.current, { verbose: false });
+      // Create new scanner instance with QR-only format for faster detection
+      scannerRef.current = new Html5Qrcode(elementId.current, {
+        verbose: false,
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+      });
 
       const camera = cameras[currentCameraIndex];
 
       await scannerRef.current.start(
         camera.id,
         {
-          fps: 15,
-          qrbox: { width: 280, height: 280 },
+          fps: 30, // Higher FPS for faster detection
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            // Use 80% of the smaller dimension for larger scanning area
+            const minDimension = Math.min(viewfinderWidth, viewfinderHeight);
+            const size = Math.floor(minDimension * 0.85);
+            return { width: size, height: size };
+          },
           aspectRatio: 1,
           disableFlip: false,
         },
         (decodedText) => {
-          if (!hasScannedRef.current && mountedRef.current) {
-            hasScannedRef.current = true;
-            const result = parseQRData(decodedText);
-            setLastScanned(result);
+          if (!mountedRef.current) return;
 
-            if (navigator.vibrate) {
-              navigator.vibrate(100);
-            }
+          const result = parseQRData(decodedText);
 
-            onScan(result);
+          // Skip if this is the same code we just scanned
+          if (result === lastScannedCodeRef.current) return;
 
-            // Reset after delay
-            setTimeout(() => {
-              hasScannedRef.current = false;
-            }, 1500);
+          // Clear any existing cooldown timer
+          if (cooldownTimerRef.current) {
+            clearTimeout(cooldownTimerRef.current);
           }
+
+          // Store the scanned code
+          lastScannedCodeRef.current = result;
+          setLastScanned(result);
+
+          if (navigator.vibrate) {
+            navigator.vibrate(100);
+          }
+
+          onScan(result);
+
+          // Reset after 5 seconds of no scanning (allows rescan if user moves away and back)
+          cooldownTimerRef.current = setTimeout(() => {
+            lastScannedCodeRef.current = null;
+          }, 5000);
         },
         () => {}
       );
@@ -239,78 +261,90 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
 
   if (!isMounted) {
     return (
-      <div className={cn('relative w-full aspect-square bg-black/90 rounded-2xl overflow-hidden', className)}>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className={cn('flex flex-col gap-4', className)}>
+        <div className="relative w-full aspect-square bg-black/90 rounded-2xl overflow-hidden">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={cn('relative w-full aspect-square bg-black rounded-2xl overflow-hidden', className)}>
-      {/* Scanner container */}
-      <div id={elementId.current} className="absolute inset-0 [&_video]:w-full [&_video]:h-full [&_video]:object-cover" />
+    <div className={cn('flex flex-col gap-4', className)}>
+      {/* Camera area */}
+      <div className="relative w-full aspect-square bg-black rounded-2xl overflow-hidden">
+        {/* Scanner container */}
+        <div id={elementId.current} className="absolute inset-0 [&_video]:w-full [&_video]:h-full [&_video]:object-cover [&>div]:!border-0 [&>div]:!shadow-none [&_#qr-shaded-region]:!border-0 [&_#qr-shaded-region]:hidden" />
 
-      {/* Scanning overlay frame */}
-      {isScanning && (
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/40" />
+        {/* Scanning overlay frame */}
+        {isScanning && (
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/40" />
 
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72">
-            <div className="absolute top-0 left-0 w-16 h-16 border-t-4 border-l-4 border-primary rounded-tl-2xl" />
-            <div className="absolute top-0 right-0 w-16 h-16 border-t-4 border-r-4 border-primary rounded-tr-2xl" />
-            <div className="absolute bottom-0 left-0 w-16 h-16 border-b-4 border-l-4 border-primary rounded-bl-2xl" />
-            <div className="absolute bottom-0 right-0 w-16 h-16 border-b-4 border-r-4 border-primary rounded-br-2xl" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] h-[85%]">
+              <div className="absolute top-0 left-0 w-16 h-16 border-t-4 border-l-4 border-primary rounded-tl-2xl" />
+              <div className="absolute top-0 right-0 w-16 h-16 border-t-4 border-r-4 border-primary rounded-tr-2xl" />
+              <div className="absolute bottom-0 left-0 w-16 h-16 border-b-4 border-l-4 border-primary rounded-bl-2xl" />
+              <div className="absolute bottom-0 right-0 w-16 h-16 border-b-4 border-r-4 border-primary rounded-br-2xl" />
 
-            <div className="absolute inset-x-4 top-4 bottom-4 overflow-hidden">
-              <div className="w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent animate-scan" />
+              {/* Scanning line */}
+              <div className="absolute inset-0 overflow-hidden">
+                <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent shadow-[0_0_8px_2px_rgba(59,130,246,0.5)] animate-scan" />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Error state */}
-      {error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-6">
-          <CameraOff className="w-16 h-16 text-destructive mb-4" />
-          <p className="text-destructive text-center font-medium mb-4">{error}</p>
-          <Button onClick={startScanning} variant="outline" className="gap-2">
-            <RefreshCw className="w-4 h-4" />
-            Повторить
-          </Button>
-        </div>
-      )}
-
-      {/* Not scanning state */}
-      {!isScanning && !error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
-          <Camera className="w-16 h-16 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground text-center mb-4">Камера не активна</p>
-          <Button onClick={startScanning} className="gap-2">
-            <Camera className="w-4 h-4" />
-            Включить камеру
-          </Button>
-        </div>
-      )}
-
-      {/* Controls */}
-      {isScanning && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
-          {hasTorch && (
-            <Button
-              variant={torchOn ? 'default' : 'secondary'}
-              size="icon"
-              onClick={toggleTorch}
-              className="rounded-full w-12 h-12 backdrop-blur-sm"
-            >
-              {torchOn ? <FlashlightOff className="w-5 h-5" /> : <Flashlight className="w-5 h-5" />}
+        {/* Error state */}
+        {error && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-6">
+            <CameraOff className="w-16 h-16 text-destructive mb-4" />
+            <p className="text-destructive text-center font-medium mb-4">{error}</p>
+            <Button onClick={startScanning} variant="outline" className="gap-2">
+              <RefreshCw className="w-4 h-4" />
+              Повторить
             </Button>
-          )}
+          </div>
+        )}
 
+        {/* Not scanning state */}
+        {!isScanning && !error && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
+            <Camera className="w-16 h-16 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground text-center mb-4">Камера не активна</p>
+            <Button onClick={startScanning} className="gap-2">
+              <Camera className="w-4 h-4" />
+              Включить камеру
+            </Button>
+          </div>
+        )}
+
+        {/* Status badge */}
+        <div className="absolute top-4 left-4">
+          <Badge variant={isScanning ? 'default' : 'secondary'} className="gap-1.5">
+            <span className={cn('w-2 h-2 rounded-full', isScanning ? 'bg-green-400 animate-pulse' : 'bg-muted-foreground')} />
+            {isScanning ? 'Сканирование' : 'Ожидание'}
+          </Badge>
+        </div>
+
+        {/* Last scanned indicator */}
+        {lastScanned && (
+          <div className="absolute top-4 right-4">
+            <Badge variant="outline" className="bg-background/80 backdrop-blur-sm max-w-[150px] truncate">
+              {lastScanned}
+            </Badge>
+          </div>
+        )}
+      </div>
+
+      {/* Controls panel - outside camera area */}
+      {(cameras.length > 1 || hasTorch) && (
+        <div className="flex items-center justify-center gap-3">
           {cameras.length > 1 && (
             <Select value={cameras[currentCameraIndex]?.id} onValueChange={selectCamera}>
-              <SelectTrigger className="w-[180px] bg-background/80 backdrop-blur-sm border-0">
+              <SelectTrigger className="w-[200px]">
                 <Camera className="w-4 h-4 mr-2 shrink-0" />
                 <SelectValue placeholder="Выберите камеру" />
               </SelectTrigger>
@@ -323,23 +357,17 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
               </SelectContent>
             </Select>
           )}
-        </div>
-      )}
 
-      {/* Status badge */}
-      <div className="absolute top-4 left-4">
-        <Badge variant={isScanning ? 'default' : 'secondary'} className="gap-1.5">
-          <span className={cn('w-2 h-2 rounded-full', isScanning ? 'bg-green-400 animate-pulse' : 'bg-muted-foreground')} />
-          {isScanning ? 'Сканирование' : 'Ожидание'}
-        </Badge>
-      </div>
-
-      {/* Last scanned indicator */}
-      {lastScanned && (
-        <div className="absolute top-4 right-4">
-          <Badge variant="outline" className="bg-background/80 backdrop-blur-sm max-w-[150px] truncate">
-            {lastScanned}
-          </Badge>
+          {hasTorch && (
+            <Button
+              variant={torchOn ? 'default' : 'outline'}
+              onClick={toggleTorch}
+              className="gap-2"
+            >
+              {torchOn ? <FlashlightOff className="w-4 h-4" /> : <Flashlight className="w-4 h-4" />}
+              {torchOn ? 'Выкл. фонарик' : 'Вкл. фонарик'}
+            </Button>
+          )}
         </div>
       )}
     </div>
