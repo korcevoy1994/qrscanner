@@ -129,15 +129,26 @@ async function validateByOrderId(
   scannerId: string | null
 ): Promise<NextResponse<ExtendedTicketValidationResponse>> {
 
-  // 1. Ищем заказ
-  const { data: order, error: orderError } = await supabase
-    .from('orders')
-    .select('id, status, customer_first_name, customer_last_name, total_tickets')
-    .eq('id', orderId)
-    .single();
+  // Параллельно запрашиваем заказ и билеты для ускорения
+  const [orderResult, ticketsResult] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('id, status, customer_first_name, customer_last_name, total_tickets')
+      .eq('id', orderId)
+      .single(),
+    supabase
+      .from('tickets')
+      .select('*')
+      .eq('order_id', orderId)
+      .order('created_at', { ascending: true })
+  ]);
+
+  const { data: order, error: orderError } = orderResult;
+  const { data: tickets, error: ticketsError } = ticketsResult;
 
   if (orderError || !order) {
-    await logScan(scannerId, logTicketNumber, 'not_found');
+    // Логируем асинхронно, не ждём завершения
+    logScan(scannerId, logTicketNumber, 'not_found');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       { success: false, message: 'Заказ не найден' },
       { status: 404 }
@@ -146,7 +157,7 @@ async function validateByOrderId(
 
   // 2. Проверяем статус оплаты
   if (order.status !== 'paid') {
-    await logScan(scannerId, logTicketNumber, 'error');
+    logScan(scannerId, logTicketNumber, 'error');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       {
         success: false,
@@ -156,15 +167,8 @@ async function validateByOrderId(
     );
   }
 
-  // 3. Получаем все билеты заказа
-  const { data: tickets, error: ticketsError } = await supabase
-    .from('tickets')
-    .select('*')
-    .eq('order_id', orderId)
-    .order('created_at', { ascending: true });
-
   if (ticketsError || !tickets || tickets.length === 0) {
-    await logScan(scannerId, logTicketNumber, 'not_found');
+    logScan(scannerId, logTicketNumber, 'not_found');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       { success: false, message: 'Билеты не найдены для данного заказа' },
       { status: 404 }
@@ -185,7 +189,7 @@ async function validateByOrderId(
       ? new Date(lastUsed.used_at).toLocaleString('ru-RU')
       : 'неизвестно';
 
-    await logScan(scannerId, logTicketNumber, 'already_used');
+    logScan(scannerId, logTicketNumber, 'already_used');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       {
         success: false,
@@ -196,7 +200,8 @@ async function validateByOrderId(
           used_tickets: usedTickets.length,
           remaining_tickets: 0,
           customer_name: customerName
-        }
+        },
+        order_id: orderId
       },
       { status: 400 }
     );
@@ -217,7 +222,7 @@ async function validateByOrderId(
     .single();
 
   if (updateError || !updatedTicket) {
-    await logScan(scannerId, logTicketNumber, 'error');
+    logScan(scannerId, logTicketNumber, 'error');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       { success: false, message: 'Ошибка при активации билета' },
       { status: 500 }
@@ -228,7 +233,8 @@ async function validateByOrderId(
   const newUsedCount = usedTickets.length + 1;
   const newRemainingCount = validTickets.length - 1;
 
-  await logScan(scannerId, updatedTicket.ticket_number || logTicketNumber, 'success');
+  // Логируем асинхронно, не блокируем ответ
+  logScan(scannerId, updatedTicket.ticket_number || logTicketNumber, 'success');
 
   // Парсим metadata если это строка
   let metadata = updatedTicket.metadata;
@@ -254,7 +260,8 @@ async function validateByOrderId(
       used_tickets: newUsedCount,
       remaining_tickets: newRemainingCount,
       customer_name: customerName
-    }
+    },
+    order_id: orderId
   });
 }
 
@@ -272,7 +279,7 @@ async function validateByTicketNumber(
     .single();
 
   if (fetchError || !ticket) {
-    await logScan(scannerId, ticketNumber, 'not_found');
+    logScan(scannerId, ticketNumber, 'not_found');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       { success: false, message: 'Билет не найден' },
       { status: 404 }
@@ -281,7 +288,7 @@ async function validateByTicketNumber(
 
   // Проверка статуса билета
   if (ticket.status === 'used') {
-    await logScan(scannerId, ticketNumber, 'already_used');
+    logScan(scannerId, ticketNumber, 'already_used');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       {
         success: false,
@@ -293,7 +300,7 @@ async function validateByTicketNumber(
   }
 
   if (ticket.status === 'cancelled') {
-    await logScan(scannerId, ticketNumber, 'error');
+    logScan(scannerId, ticketNumber, 'error');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       {
         success: false,
@@ -305,7 +312,7 @@ async function validateByTicketNumber(
   }
 
   if (ticket.status !== 'valid') {
-    await logScan(scannerId, ticketNumber, 'error');
+    logScan(scannerId, ticketNumber, 'error');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       {
         success: false,
@@ -329,14 +336,14 @@ async function validateByTicketNumber(
     .single();
 
   if (updateError || !updatedTicket) {
-    await logScan(scannerId, ticketNumber, 'error');
+    logScan(scannerId, ticketNumber, 'error');
     return NextResponse.json<ExtendedTicketValidationResponse>(
       { success: false, message: 'Ошибка при обновлении билета' },
       { status: 500 }
     );
   }
 
-  await logScan(scannerId, ticketNumber, 'success');
+  logScan(scannerId, ticketNumber, 'success');
 
   // Парсим metadata если это строка
   let metadata = updatedTicket.metadata;

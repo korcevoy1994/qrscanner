@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Camera, Upload, History, CheckCircle2, XCircle, Clock, Ticket, User, MapPin, Loader2, LogOut, Settings, Users } from 'lucide-react';
+import { Camera, Upload, History, CheckCircle2, XCircle, Clock, Ticket, User, MapPin, Loader2, LogOut, Settings, Users, CheckCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import QRScanner from '@/components/QRScanner';
 import QRFileUpload from '@/components/QRFileUpload';
@@ -56,10 +56,6 @@ export default function Home() {
         ...prev.slice(0, 49), // Keep last 50 items
       ]);
 
-      // Auto-clear result after 5 seconds
-      setTimeout(() => {
-        setValidationResult(null);
-      }, 5000);
     } catch (error) {
       console.error('Validation error:', error);
       const errorResult: TicketValidationResponse = {
@@ -84,6 +80,42 @@ export default function Home() {
 
   const clearHistory = useCallback(() => {
     setScanHistory([]);
+  }, []);
+
+  const handleValidateAll = useCallback(async (orderId: string) => {
+    setIsValidating(true);
+
+    try {
+      const response = await fetch('/api/validate-all-tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId }),
+      });
+
+      const data: TicketValidationResponse = await response.json();
+      setValidationResult(data);
+
+      // Add to history
+      setScanHistory((prev) => [
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          ticketNumber: `Все билеты (${orderId})`,
+          timestamp: new Date(),
+          result: data,
+        },
+        ...prev.slice(0, 49),
+      ]);
+
+    } catch (error) {
+      console.error('Validate all error:', error);
+      const errorResult: TicketValidationResponse = {
+        success: false,
+        message: 'Ошибка соединения с сервером',
+      };
+      setValidationResult(errorResult);
+    } finally {
+      setIsValidating(false);
+    }
   }, []);
 
   if (isLoading) {
@@ -263,11 +295,11 @@ export default function Home() {
         )}
       </div>
 
-      {/* Validation overlay */}
+      {/* Validation overlay - minimal, non-blocking */}
       {isValidating && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center">
-          <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
-          <p className="text-xl font-semibold">Проверка билета...</p>
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-background/95 backdrop-blur-sm rounded-full px-6 py-3 shadow-lg border flex items-center gap-3">
+          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+          <p className="text-sm font-medium">Проверка...</p>
         </div>
       )}
 
@@ -340,6 +372,21 @@ export default function Home() {
                           )}
                         </div>
                       </div>
+
+                      {/* Кнопка "Активировать все" */}
+                      {validationResult.order_info.remaining_tickets > 0 && validationResult.order_id && (
+                        <Button
+                          variant="secondary"
+                          className="w-full mt-2 bg-white/30 hover:bg-white/40 text-white border-white/30"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleValidateAll(validationResult.order_id!);
+                          }}
+                        >
+                          <CheckCheck className="w-4 h-4 mr-2" />
+                          Активировать все ({validationResult.order_info.remaining_tickets})
+                        </Button>
+                      )}
                     </>
                   )}
 

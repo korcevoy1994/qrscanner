@@ -47,4 +47,5 @@ export interface TicketValidationResponse {
   message: string;
   ticket?: Ticket;
   order_info?: OrderInfo;
+  order_id?: string;
 }
