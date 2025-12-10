@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Camera, Upload, History, CheckCircle2, XCircle, Clock, Ticket, User, MapPin, Loader2, LogOut, Settings } from 'lucide-react';
+import { Camera, Upload, History, CheckCircle2, XCircle, Clock, Ticket, User, MapPin, Loader2, LogOut, Settings, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import QRScanner from '@/components/QRScanner';
 import QRFileUpload from '@/components/QRFileUpload';
@@ -301,42 +301,90 @@ export default function Home() {
             </p>
 
             {/* Ticket details */}
-            {validationResult.ticket && (
+            {(validationResult.ticket || validationResult.order_info) && (
               <Card className="w-full bg-white/20 border-white/30 backdrop-blur-sm">
                 <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <Ticket className="w-5 h-5 text-white/70" />
-                    <div>
-                      <p className="text-xs text-white/70">Номер билета</p>
-                      <p className="font-mono font-semibold">
-                        {validationResult.ticket.ticket_number}
-                      </p>
-                    </div>
-                  </div>
-
-                  {validationResult.ticket.metadata && (
+                  {/* Order info - показываем использование билетов */}
+                  {validationResult.order_info && (
                     <>
                       <div className="flex items-center gap-3">
                         <User className="w-5 h-5 text-white/70" />
                         <div>
-                          <p className="text-xs text-white/70">Владелец</p>
+                          <p className="text-xs text-white/70">Покупатель</p>
                           <p className="font-semibold">
-                            {validationResult.ticket.metadata.holder_name}
+                            {validationResult.order_info.customer_name}
                           </p>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <MapPin className="w-5 h-5 text-white/70" />
+                        <Users className="w-5 h-5 text-white/70" />
                         <div>
-                          <p className="text-xs text-white/70">Место</p>
+                          <p className="text-xs text-white/70">Билеты</p>
                           <p className="font-semibold">
-                            Зона {validationResult.ticket.metadata.seat_zone}, Ряд{' '}
-                            {validationResult.ticket.metadata.seat_row}, Место{' '}
-                            {validationResult.ticket.metadata.seat_number}
+                            Использовано: {validationResult.order_info.used_tickets} из {validationResult.order_info.total_tickets}
+                          </p>
+                          {/* Progress bar */}
+                          <div className="w-full bg-white/20 rounded-full h-2 mt-1">
+                            <div
+                              className="bg-white rounded-full h-2 transition-all duration-300"
+                              style={{
+                                width: `${(validationResult.order_info.used_tickets / validationResult.order_info.total_tickets) * 100}%`
+                              }}
+                            />
+                          </div>
+                          {validationResult.order_info.remaining_tickets > 0 && (
+                            <p className="text-xs text-white/70 mt-1">
+                              Осталось: {validationResult.order_info.remaining_tickets}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {validationResult.ticket && (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Ticket className="w-5 h-5 text-white/70" />
+                        <div>
+                          <p className="text-xs text-white/70">Номер билета</p>
+                          <p className="font-mono font-semibold text-sm">
+                            {validationResult.ticket.ticket_number}
                           </p>
                         </div>
                       </div>
+
+                      {validationResult.ticket.metadata && (
+                        <>
+                          {/* Если нет order_info, показываем holder_name из metadata */}
+                          {!validationResult.order_info && (
+                            <div className="flex items-center gap-3">
+                              <User className="w-5 h-5 text-white/70" />
+                              <div>
+                                <p className="text-xs text-white/70">Владелец</p>
+                                <p className="font-semibold">
+                                  {validationResult.ticket.metadata.holder_name}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {validationResult.ticket.metadata.seat_zone && (
+                            <div className="flex items-center gap-3">
+                              <MapPin className="w-5 h-5 text-white/70" />
+                              <div>
+                                <p className="text-xs text-white/70">Место</p>
+                                <p className="font-semibold">
+                                  Зона {validationResult.ticket.metadata.seat_zone}, Ряд{' '}
+                                  {validationResult.ticket.metadata.seat_row}, Место{' '}
+                                  {validationResult.ticket.metadata.seat_number}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </>
                   )}
                 </CardContent>

@@ -7,7 +7,6 @@ interface AnimatedCounterProps {
   duration?: number;
   className?: string;
 }
-
 export function AnimatedCounter({ value, duration = 300, className }: AnimatedCounterProps) {
   const [displayValue, setDisplayValue] = useState(value);
   const prevValueRef = useRef(value);

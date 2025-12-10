@@ -35,8 +35,16 @@ export interface Ticket {
   event_id: string;
 }
 
+export interface OrderInfo {
+  total_tickets: number;
+  used_tickets: number;
+  remaining_tickets: number;
+  customer_name: string;
+}
+
 export interface TicketValidationResponse {
   success: boolean;
   message: string;
   ticket?: Ticket;
+  order_info?: OrderInfo;
 }

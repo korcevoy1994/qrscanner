@@ -23,15 +23,18 @@ export default function QRFileUpload({ onScan, className }: QRFileUploadProps) {
   const [error, setError] = useState<string | null>(null);
   const elementId = useRef(`qr-file-reader-${Math.random().toString(36).slice(2, 9)}`);
 
-  // Parse QR data
+  // Parse QR data - передаём весь JSON для валидации по order_id/ticket_id
   const parseQRData = useCallback((decodedText: string): string => {
     try {
+      // Проверяем что это валидный JSON
       let qrData = JSON.parse(decodedText);
       if (typeof qrData === 'string') {
         qrData = JSON.parse(qrData);
       }
-      return qrData.ticket_number || qrData.ticketNumber || decodedText;
+      // Возвращаем весь JSON как строку для передачи в API
+      return JSON.stringify(qrData);
     } catch {
+      // Если не JSON - возвращаем как есть (legacy формат)
       return decodedText;
     }
   }, []);
