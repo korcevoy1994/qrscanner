@@ -426,15 +426,11 @@ export default function AdminPage() {
             <Button variant="ghost" size="icon" onClick={() => router.push('/')}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                <ShieldCheck className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold">Админ-панель</h1>
-                <p className="text-xs text-muted-foreground">Управление сканерами</p>
-              </div>
-            </div>
+            <img
+              src="/goqode.png"
+              alt="GoQode"
+              className="h-10 object-contain"
+            />
           </div>
         </div>
       </header>
@@ -455,6 +451,9 @@ export default function AdminPage() {
 
           {/* Stats Tab */}
           <TabsContent value="stats" className="space-y-6">
+            <h1 className="text-3xl font-bold text-center">
+              <span style={{ color: '#C9FD48' }}>go</span>Stats
+            </h1>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Radio className={`w-4 h-4 ${isRealtimeConnected ? 'text-green-500 animate-pulse' : 'text-muted-foreground'}`} />
@@ -631,6 +630,9 @@ export default function AdminPage() {
 
           {/* Users Tab */}
           <TabsContent value="users" className="space-y-4">
+            <h1 className="text-3xl font-bold text-center">
+              <span style={{ color: '#C9FD48' }}>go</span>Users
+            </h1>
             <div className="flex justify-end">
               <Button onClick={openAddForm} className="gap-2">
                 <Plus className="w-4 h-4" />

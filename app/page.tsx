@@ -96,20 +96,11 @@ export default function Home() {
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-              <svg className="w-6 h-6 text-primary-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-lg font-bold">QR Сканнер</h1>
-              <p className="text-xs text-muted-foreground">Проверка билетов</p>
-            </div>
-          </div>
+          <img
+            src="/goqode.png"
+            alt="GoQode"
+            className="h-10 object-contain"
+          />
 
           <div className="flex items-center gap-3">
             {user && (
