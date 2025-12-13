@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Camera, Upload, History, CheckCircle2, XCircle, Clock, Ticket, User, MapPin, Loader2, LogOut, Settings, Users, CheckCheck } from 'lucide-react';
+import { Camera, Upload, History, CheckCircle2, XCircle, Clock, Ticket, User, MapPin, Loader2, LogOut, Settings, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import QRScanner from '@/components/QRScanner';
 import QRFileUpload from '@/components/QRFileUpload';
@@ -82,41 +82,6 @@ export default function Home() {
     setScanHistory([]);
   }, []);
 
-  const handleValidateAll = useCallback(async (orderId: string) => {
-    setIsValidating(true);
-
-    try {
-      const response = await fetch('/api/validate-all-tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: orderId }),
-      });
-
-      const data: TicketValidationResponse = await response.json();
-      setValidationResult(data);
-
-      // Add to history
-      setScanHistory((prev) => [
-        {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          ticketNumber: `Все билеты (${orderId})`,
-          timestamp: new Date(),
-          result: data,
-        },
-        ...prev.slice(0, 49),
-      ]);
-
-    } catch (error) {
-      console.error('Validate all error:', error);
-      const errorResult: TicketValidationResponse = {
-        success: false,
-        message: 'Ошибка соединения с сервером',
-      };
-      setValidationResult(errorResult);
-    } finally {
-      setIsValidating(false);
-    }
-  }, []);
 
   if (isLoading) {
     return (
@@ -372,21 +337,6 @@ export default function Home() {
                           )}
                         </div>
                       </div>
-
-                      {/* Кнопка "Активировать все" */}
-                      {validationResult.order_info.remaining_tickets > 0 && validationResult.order_id && (
-                        <Button
-                          variant="secondary"
-                          className="w-full mt-2 bg-white/30 hover:bg-white/40 text-white border-white/30"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleValidateAll(validationResult.order_id!);
-                          }}
-                        >
-                          <CheckCheck className="w-4 h-4 mr-2" />
-                          Активировать все ({validationResult.order_info.remaining_tickets})
-                        </Button>
-                      )}
                     </>
                   )}
 
