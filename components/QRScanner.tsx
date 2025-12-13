@@ -6,7 +6,7 @@ import { Camera, CameraOff, Flashlight, FlashlightOff, RefreshCw } from 'lucide-
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { cn, hapticFeedback } from '@/lib/utils';
 
 interface QRScannerProps {
   onScan: (data: string) => void;
@@ -167,9 +167,8 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
           lastScannedCodeRef.current = result;
           setLastScanned(result);
 
-          if (navigator.vibrate) {
-            navigator.vibrate(100);
-          }
+          // Haptic feedback on scan
+          hapticFeedback('success');
 
           onScan(result);
 
@@ -294,7 +293,7 @@ export default function QRScanner({ onScan, isActive = true, className }: QRScan
 
               {/* Scanning line */}
               <div className="absolute inset-0 overflow-hidden">
-                <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent shadow-[0_0_8px_2px_rgba(59,130,246,0.5)] animate-scan" />
+                <div className="h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent shadow-[0_0_8px_2px_rgba(var(--primary-rgb),0.5)] animate-scan" />
               </div>
             </div>
           </div>

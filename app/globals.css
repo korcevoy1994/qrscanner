@@ -61,20 +61,20 @@
   }
 }
 
-/* Scanning animation */
+/* Scanning animation - moves line up and down the scan area */
 @keyframes scan {
-  0% {
-    transform: translateY(0);
+  0%, 100% {
+    top: 0;
   }
   50% {
-    transform: translateY(calc(100% - 2px));
-  }
-  100% {
-    transform: translateY(0);
+    top: calc(100% - 2px);
   }
 }
 
 .animate-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
   animation: scan 2s ease-in-out infinite;
 }
 

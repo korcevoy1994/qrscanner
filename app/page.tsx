@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, hapticFeedback } from '@/lib/utils';
 import type { TicketValidationResponse } from '@/types/ticket';
 
 interface ScanHistoryItem {
@@ -45,6 +45,9 @@ export default function Home() {
       const data: TicketValidationResponse = await response.json();
       setValidationResult(data);
 
+      // Haptic feedback based on result
+      hapticFeedback(data.success ? 'success' : 'error');
+
       // Add to history
       setScanHistory((prev) => [
         {
@@ -63,6 +66,7 @@ export default function Home() {
         message: 'Ошибка соединения с сервером',
       };
       setValidationResult(errorResult);
+      hapticFeedback('error');
 
       setScanHistory((prev) => [
         {
